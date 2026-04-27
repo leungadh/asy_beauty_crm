@@ -162,7 +162,7 @@ async function supaFetch(path, opts = {}) {
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 async function sendMagicLink(email) {
-  const redirectTo = window.location.origin + '/CRM.html';
+  const redirectTo = window.location.origin + '/';
   const res = await fetch(`${SUPABASE_URL}/auth/v1/otp`, {
     method: 'POST',
     headers: { 'apikey': SUPABASE_ANON, 'Content-Type': 'application/json' },

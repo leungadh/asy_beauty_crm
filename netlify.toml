@@ -4,6 +4,12 @@
 [build]
   publish = "."
 
+# Serve CRM.html at the root so magic link tokens in the URL hash are preserved
+[[redirects]]
+  from = "/"
+  to   = "/CRM.html"
+  status = 200
+
 [[headers]]
   for = "/sw.js"
   [headers.values]
