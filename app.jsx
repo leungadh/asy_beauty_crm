@@ -3,8 +3,8 @@
 const { useState: useStateApp, useEffect: useEffectApp, useMemo: useMemoApp } = React;
 
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
-  "variant": "blue",
-  "density": "regular",
+  "variant": "sage",
+  "density": "comfy",
   "radius": "round"
 }/*EDITMODE-END*/;
 
