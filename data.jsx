@@ -181,6 +181,9 @@ async function sendMagicLink(email) {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    if (body.error_code === 'over_email_send_rate_limit') {
+      throw new Error('Too many sign-in attempts. Please wait an hour and try again.');
+    }
     throw new Error(body.msg || body.message || body.error_description || `Supabase error ${res.status}`);
   }
 }
