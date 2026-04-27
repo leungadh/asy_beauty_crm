@@ -16,6 +16,9 @@ const DEMO_MODE = SUPABASE_URL.includes('YOUR_PROJECT');
 // Only these emails can request a sign-in link
 const ALLOWED_EMAILS = [
   'REDACTED_EMAIL_1',
+  'REDACTED_EMAIL_2',
+  'REDACTED_EMAIL_3',
+  'REDACTED_EMAIL_4',
 ];
 
 const SERVICES = [
