@@ -179,7 +179,10 @@ async function sendMagicLink(email) {
     headers: { 'apikey': SUPABASE_ANON, 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, create_user: true, redirect_to: redirectTo }),
   });
-  if (!res.ok) throw new Error('Failed to send magic link');
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.msg || body.message || body.error_description || `Supabase error ${res.status}`);
+  }
 }
 
 // Call on app mount: exchanges URL hash tokens from a magic link click.

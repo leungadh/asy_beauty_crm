@@ -22,8 +22,8 @@ function LoginScreen({ initialError = '' }) {
     try {
       await sendMagicLink(email.trim());
       setSent(true);
-    } catch {
-      setError('Could not send the link. Please check your email and try again.');
+    } catch (err) {
+      setError(err.message || 'Could not send the link. Please try again.');
     } finally {
       setSending(false);
     }
