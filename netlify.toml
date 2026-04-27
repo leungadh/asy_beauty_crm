@@ -1,0 +1,22 @@
+# Netlify configuration for ASY Beauté CRM
+# No build step — Netlify serves static files from the repo root.
+
+[build]
+  publish = "."
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+    Service-Worker-Allowed = "/"
+
+[[headers]]
+  for = "/CRM.html"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/*.jsx"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"
+    Content-Type  = "application/javascript"

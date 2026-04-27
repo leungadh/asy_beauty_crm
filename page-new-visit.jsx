@@ -64,14 +64,19 @@ function PageNewVisit({ store, setStore, go, showToast }) {
     setCustomPrice(''); // re-derive price
   }
 
+  const [saving, setSaving] = useStateNV(false);
+
   function canSave() {
     return name.trim() && phone.trim() && services.length > 0 && date && time;
   }
 
-  function handleSave() {
-    if (!canSave()) return;
+  async function handleSave() {
+    if (!canSave() || saving) return;
+    setSaving(true);
+
+    const visitId = 'v' + Date.now();
     const visit = {
-      id: 'v' + Date.now(),
+      id: visitId,
       date, time,
       services: [...services],
       price: computedPrice,
@@ -82,42 +87,50 @@ function PageNewVisit({ store, setStore, go, showToast }) {
       photos: parseInt(photos) || 0,
     };
 
-    setStore(prev => {
-      const customers = [...prev.customers];
-      let idx = customers.findIndex(c => c.id === selectedCustomerId);
-      if (idx < 0) {
-        // new customer (or matched by phone)
-        idx = customers.findIndex(c => c.phone.replace(/\s/g,'') === phone.replace(/\s/g,''));
-      }
-      if (idx < 0) {
-        const newCust = {
-          id: 'c' + Date.now(),
-          name: name.trim(), phone: phone.trim(), notes: notes.trim(),
-          createdAt: todayISO,
-          visits: [visit],
-        };
-        customers.push(newCust);
-      } else {
-        customers[idx] = {
-          ...customers[idx],
-          name: name.trim(),
-          phone: phone.trim(),
-          notes: notes.trim() || customers[idx].notes,
-          visits: [...customers[idx].visits, visit],
-        };
-      }
-      return { ...prev, customers };
-    });
+    // Determine customer (selected, or matched by phone, or new)
+    let custId = selectedCustomerId;
+    let custObj;
+    const existingIdx = store.customers.findIndex(c =>
+      c.id === selectedCustomerId ||
+      c.phone.replace(/\s/g,'') === phone.replace(/\s/g,'')
+    );
+    if (existingIdx >= 0) {
+      const existing = store.customers[existingIdx];
+      custId = existing.id;
+      custObj = { ...existing, name: name.trim(), phone: phone.trim(), notes: notes.trim() || existing.notes };
+    } else {
+      custId = 'c' + Date.now();
+      custObj = { id: custId, name: name.trim(), phone: phone.trim(), notes: notes.trim(), createdAt: todayISO };
+    }
 
-    showToast('Visit recorded successfully');
-    // reset
-    setSelectedCustomerId(null);
-    setName(''); setPhone(''); setNotes('');
-    setServices([]); setCustomPrice('');
-    setComment(''); setFeedback(''); setRating(0); setCheckup(''); setPhotos(0);
-    setDate(todayISO); setTime(new Date().toTimeString().slice(0,5));
-    setMode('new');
-    setTimeout(() => go('search'), 800);
+    try {
+      await upsertCustomer(custObj);
+      await upsertVisit({ ...visit, customer_id: custId });
+
+      setStore(prev => {
+        const customers = [...prev.customers];
+        const idx = customers.findIndex(c => c.id === custId);
+        if (idx < 0) {
+          customers.push({ ...custObj, visits: [visit] });
+        } else {
+          customers[idx] = { ...customers[idx], ...custObj, visits: [...customers[idx].visits, visit] };
+        }
+        return { ...prev, customers };
+      });
+
+      showToast('Visit recorded successfully');
+      setSelectedCustomerId(null);
+      setName(''); setPhone(''); setNotes('');
+      setServices([]); setCustomPrice('');
+      setComment(''); setFeedback(''); setRating(0); setCheckup(''); setPhotos(0);
+      setDate(todayISO); setTime(new Date().toTimeString().slice(0,5));
+      setMode('new');
+      setTimeout(() => go('search'), 800);
+    } catch {
+      showToast('Failed to save — please check your connection.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -129,10 +142,10 @@ function PageNewVisit({ store, setStore, go, showToast }) {
         </div>
         <div className="row">
           <button className="btn btn-ghost" onClick={() => go('search')}>Cancel</button>
-          <button className={`btn btn-primary btn-lg`} disabled={!canSave()} onClick={handleSave}
-            style={{ opacity: canSave() ? 1 : 0.5, cursor: canSave() ? 'pointer' : 'not-allowed' }}>
+          <button className={`btn btn-primary btn-lg`} disabled={!canSave() || saving} onClick={handleSave}
+            style={{ opacity: canSave() && !saving ? 1 : 0.5, cursor: canSave() && !saving ? 'pointer' : 'not-allowed' }}>
             <Icons.Check size={16} strokeWidth={2.5} />
-            Save visit
+            {saving ? 'Saving…' : 'Save visit'}
           </button>
         </div>
       </div>

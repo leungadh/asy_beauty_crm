@@ -28,19 +28,52 @@ function PageCustomer({ store, setStore, customerId, go, showToast }) {
   cust.visits.forEach(v => v.services.forEach(s => serviceCounts[s] = (serviceCounts[s]||0) + 1));
   const topServices = Object.entries(serviceCounts).sort((a,b) => b[1]-a[1]).slice(0,3);
 
-  function saveEdits() {
-    setStore(prev => ({
-      ...prev,
-      customers: prev.customers.map(c => c.id === cust.id
-        ? { ...c, name: name.trim(), phone: phone.trim(), notes: notes.trim() }
-        : c)
-    }));
-    setEditing(false);
-    showToast('Customer updated');
+  async function saveEdits() {
+    try {
+      await upsertCustomer({ ...cust, name: name.trim(), phone: phone.trim(), notes: notes.trim() });
+      setStore(prev => ({
+        ...prev,
+        customers: prev.customers.map(c => c.id === cust.id
+          ? { ...c, name: name.trim(), phone: phone.trim(), notes: notes.trim() }
+          : c)
+      }));
+      setEditing(false);
+      showToast('Customer updated');
+    } catch {
+      showToast('Failed to update — please check your connection.');
+    }
   }
   function startEdit() {
     setName(cust.name); setPhone(cust.phone); setNotes(cust.notes || '');
     setEditing(true);
+  }
+
+  async function handleDeleteCustomer() {
+    if (!confirm(`Permanently delete ${cust.name} and all ${cust.visitCount} visit${cust.visitCount !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+    try {
+      await deleteCustomer(cust.id);
+      setStore(prev => ({ ...prev, customers: prev.customers.filter(c => c.id !== cust.id) }));
+      showToast(`${cust.name} deleted`);
+      go('search');
+    } catch {
+      showToast('Failed to delete — please check your connection.');
+    }
+  }
+
+  async function handleDeleteVisit(visitId, visitDate) {
+    if (!confirm(`Remove the visit on ${fmtDate(visitDate)}? This cannot be undone.`)) return;
+    try {
+      await deleteVisit(visitId);
+      setStore(prev => ({
+        ...prev,
+        customers: prev.customers.map(c => c.id === cust.id
+          ? { ...c, visits: c.visits.filter(v => v.id !== visitId) }
+          : c)
+      }));
+      showToast('Visit removed');
+    } catch {
+      showToast('Failed to remove visit — please check your connection.');
+    }
   }
 
   return (
@@ -78,7 +111,7 @@ function PageCustomer({ store, setStore, customerId, go, showToast }) {
               </>
             )}
           </div>
-          <div className="row" style={{ flexShrink: 0 }}>
+          <div className="row" style={{ flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8 }}>
             {editing ? (
               <>
                 <button className="btn btn-ghost" onClick={() => setEditing(false)}>Cancel</button>
@@ -88,6 +121,11 @@ function PageCustomer({ store, setStore, customerId, go, showToast }) {
               <>
                 <button className="btn btn-sm" onClick={startEdit}><Icons.Edit size={14} /> Edit</button>
                 <button className="btn btn-primary btn-sm" onClick={() => go('new')}><Icons.Plus size={14} /> New visit</button>
+                <button className="btn btn-sm"
+                  style={{ color: 'var(--bad)', borderColor: 'var(--bad)', background: 'transparent' }}
+                  onClick={handleDeleteCustomer}>
+                  <Icons.X size={14} /> Delete
+                </button>
               </>
             )}
           </div>
@@ -121,10 +159,24 @@ function PageCustomer({ store, setStore, customerId, go, showToast }) {
         <div className="card">
           <div className="card-pad">
             <h3 className="section-title"><Icons.Clock size={14} /> Visit history</h3>
+            {cust.visits.length === 0 && (
+              <div className="empty" style={{ padding: '32px 0' }}>
+                <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>No visits recorded yet.</div>
+              </div>
+            )}
             <div className="timeline">
               {cust.visits.map(v => (
                 <div key={v.id} className="tl-item">
-                  <div className="tl-date">{fmtDate(v.date)} · {v.time}</div>
+                  <div className="tl-date row row-between">
+                    <span>{fmtDate(v.date)} · {v.time}</span>
+                    <button
+                      className="btn btn-ghost btn-sm btn-icon"
+                      title="Remove this visit"
+                      style={{ color: 'var(--ink-4)', marginLeft: 8 }}
+                      onClick={() => handleDeleteVisit(v.id, v.date)}>
+                      <Icons.X size={13} />
+                    </button>
+                  </div>
                   <div className="tl-card">
                     <div className="row row-between" style={{ marginBottom: 8 }}>
                       <ServiceTags ids={v.services} />

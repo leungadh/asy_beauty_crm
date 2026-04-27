@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>ASY Beauté — One-time Migration Tool</title>
+<style>
+  body { font-family: ui-sans-serif, system-ui, sans-serif; max-width: 640px; margin: 60px auto; padding: 0 24px; color: #1a1a1a; }
+  h1 { font-size: 22px; margin-bottom: 6px; }
+  .sub { color: #666; margin-bottom: 32px; font-size: 14px; }
+  label { display: block; font-size: 12px; font-weight: 600; color: #555; margin-bottom: 6px; margin-top: 20px; }
+  input, textarea { width: 100%; padding: 9px 12px; border: 1px solid #ccc; border-radius: 8px; font: inherit; box-sizing: border-box; }
+  button { margin-top: 24px; padding: 10px 20px; background: #2563eb; color: #fff; border: none; border-radius: 8px; font: inherit; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  #log { margin-top: 24px; padding: 14px; background: #f5f5f5; border-radius: 8px; font-family: monospace; font-size: 12px; white-space: pre-wrap; max-height: 320px; overflow-y: auto; }
+  .warn { background: #fff8e6; border: 1px solid #e6c84f; border-radius: 8px; padding: 14px 16px; font-size: 13px; margin-bottom: 28px; }
+</style>
+</head>
+<body>
+<h1>One-time Migration Tool</h1>
+<div class="sub">Imports your exported CRM JSON into Supabase. Run once, then discard this file.</div>
+
+<div class="warn">
+  ⚠️ Use your <strong>service_role key</strong> (not the anon key) — it bypasses RLS so data can be imported as any user.<br>
+  Never deploy or share this file. Delete it after migration.
+</div>
+
+<label>Supabase Project URL</label>
+<input id="url" placeholder="https://yourproject.supabase.co" />
+
+<label>Service Role Key (secret)</label>
+<input id="key" type="password" placeholder="eyJ..." />
+
+<label>Owner User ID (UUID from Supabase Auth → Users)</label>
+<input id="uid" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+
+<label>JSON export file (from "Export JSON" in the app)</label>
+<input id="file" type="file" accept=".json" />
+
+<button id="btn" onclick="run()">Import into Supabase</button>
+
+<div id="log" style="display:none"></div>
+
+<script>
+function log(msg) {
+  const el = document.getElementById('log');
+  el.style.display = 'block';
+  el.textContent += msg + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+
+async function supaPost(url, key, path, body) {
+  const res = await fetch(url + path, {
+    method: 'POST',
+    headers: {
+      'apikey': key,
+      'Authorization': 'Bearer ' + key,
+      'Content-Type': 'application/json',
+      'Prefer': 'resolution=merge-duplicates',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+  return res.status === 204 ? null : res.json();
+}
+
+async function run() {
+  const url = document.getElementById('url').value.trim().replace(/\/$/, '');
+  const key = document.getElementById('key').value.trim();
+  const uid = document.getElementById('uid').value.trim();
+  const fileInput = document.getElementById('file');
+
+  if (!url || !key || !uid || !fileInput.files[0]) {
+    alert('Please fill in all fields and select a file.'); return;
+  }
+
+  document.getElementById('btn').disabled = true;
+  document.getElementById('log').textContent = '';
+
+  let data;
+  try {
+    data = JSON.parse(await fileInput.files[0].text());
+  } catch {
+    log('ERROR: Could not parse JSON file.'); return;
+  }
+
+  const customers = data.customers || [];
+  log(`Found ${customers.length} customers.`);
+
+  let custOk = 0, custErr = 0, visitOk = 0, visitErr = 0;
+
+  for (const c of customers) {
+    try {
+      await supaPost(url, key, '/rest/v1/customers', {
+        id: c.id, name: c.name, phone: c.phone, notes: c.notes,
+        created_at: c.createdAt, user_id: uid,
+      });
+      custOk++;
+    } catch (e) {
+      log(`Customer error (${c.name}): ${e.message}`); custErr++;
+    }
+
+    for (const v of (c.visits || [])) {
+      try {
+        await supaPost(url, key, '/rest/v1/visits', {
+          id: v.id, customer_id: c.id, date: v.date, time: v.time,
+          services: v.services, price: v.price, comment: v.comment,
+          feedback: v.feedback, rating: v.rating, checkup: v.checkup, photos: v.photos,
+        });
+        visitOk++;
+      } catch (e) {
+        log(`Visit error (${c.name} / ${v.date}): ${e.message}`); visitErr++;
+      }
+    }
+  }
+
+  log(`\nDone. Customers: ${custOk} ok, ${custErr} errors. Visits: ${visitOk} ok, ${visitErr} errors.`);
+  if (custErr + visitErr === 0) log('✓ Migration successful. You can now delete this file.');
+  document.getElementById('btn').disabled = false;
+}
+</script>
+</body>
+</html>

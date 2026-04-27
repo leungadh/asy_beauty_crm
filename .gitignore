@@ -21,3 +21,6 @@
 node_modules/
 dist/
 uploads/
+
+# Migration tool — contains service role key, never commit with real credentials
+# (commit the blank template, but not after filling in keys)

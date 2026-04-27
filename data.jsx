@@ -1,4 +1,17 @@
-// data.jsx — services, seed customers, helpers, store
+// data.jsx — services, helpers, Supabase store
+
+// ── Supabase config ───────────────────────────────────────────────────────────
+// After creating your Supabase project (ap-southeast-1), replace these values.
+// Project Settings → API → Project URL & anon public key.
+const SUPABASE_URL  = 'https://jiodfuhitgbepordhufs.supabase.co';
+const SUPABASE_ANON = 'sb_publishable_GdOGZSN94lPRJpdhiKe5Yw_YRmviO8W';
+
+// LTV tier thresholds (SGD) — adjust as needed
+const LTV_HIGH = 2000;
+const LTV_MID  = 800;
+
+// True when Supabase hasn't been configured yet — loads seed data locally instead
+const DEMO_MODE = SUPABASE_URL.includes('YOUR_PROJECT');
 
 const SERVICES = [
   { id: 'areola',   name: 'Areola',    duration: 90, price: 680, icon: 'ServiceAreola',   desc: 'Permanent makeup' },
@@ -28,7 +41,7 @@ const daysSince = (iso) => {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
 };
 
-// ── Seed data ─────────────────────────────────────────────────
+// ── Seed data ─────────────────────────────────────────────────────────────────
 const today = new Date();
 const dOff = (n) => {
   const d = new Date(today); d.setDate(d.getDate() - n);
@@ -111,31 +124,212 @@ function enrich(cust) {
   return { ...cust, visits, lastVisit, totalSpend, visitCount: visits.length, avgRating };
 }
 
-// ── Store using localStorage ──────────────────────────────────
+// ── Session management ────────────────────────────────────────────────────────
+const SESSION_KEY = 'asy_supa_session';
+
+function getSession() {
+  try { return JSON.parse(localStorage.getItem(SESSION_KEY)); } catch { return null; }
+}
+function setSession(s) {
+  localStorage.setItem(SESSION_KEY, JSON.stringify(s));
+}
+function clearSession() {
+  localStorage.removeItem(SESSION_KEY);
+}
+function getUserId() {
+  const s = getSession();
+  if (!s?.access_token) return null;
+  try {
+    return JSON.parse(atob(s.access_token.split('.')[1])).sub;
+  } catch { return null; }
+}
+
+// ── Supabase fetch helper ─────────────────────────────────────────────────────
+async function supaFetch(path, opts = {}) {
+  const session = getSession();
+  const headers = {
+    'apikey': SUPABASE_ANON,
+    'Content-Type': 'application/json',
+    ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+    ...opts.headers,
+  };
+  const res = await fetch(SUPABASE_URL + path, { ...opts, headers });
+  if (res.status === 401) { clearSession(); location.reload(); return null; }
+  if (!res.ok) throw new Error(`Supabase ${res.status}: ${await res.text()}`);
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+// ── Auth helpers ──────────────────────────────────────────────────────────────
+async function sendMagicLink(email) {
+  const redirectTo = window.location.origin + '/CRM.html';
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/otp`, {
+    method: 'POST',
+    headers: { 'apikey': SUPABASE_ANON, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, create_user: true, redirect_to: redirectTo }),
+  });
+  if (!res.ok) throw new Error('Failed to send magic link');
+}
+
+// Call on app mount: exchanges URL hash tokens from a magic link click.
+// Returns 'ok', 'error', or false (no hash present).
+async function handleAuthCallback() {
+  const hash = window.location.hash;
+  if (!hash) return false;
+  const params = new URLSearchParams(hash.slice(1));
+  history.replaceState(null, '', window.location.pathname);
+
+  if (params.get('error')) {
+    const desc = params.get('error_description') || params.get('error');
+    console.error('Auth error:', desc);
+    return 'error:' + desc.replace(/\+/g, ' ');
+  }
+
+  const accessToken  = params.get('access_token');
+  const refreshToken = params.get('refresh_token');
+  const expiresIn    = params.get('expires_in');
+  if (!accessToken) return false;
+  setSession({
+    access_token:  accessToken,
+    refresh_token: refreshToken,
+    expires_at:    Date.now() + parseInt(expiresIn || '3600') * 1000,
+  });
+  return 'ok';
+}
+
+// Returns a valid session, refreshing if near expiry, or null if not logged in
+async function ensureSession() {
+  const s = getSession();
+  if (!s) return null;
+  if (s.expires_at && Date.now() > s.expires_at - 300_000) {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST',
+      headers: { 'apikey': SUPABASE_ANON, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: s.refresh_token }),
+    });
+    if (!res.ok) { clearSession(); return null; }
+    const fresh = await res.json();
+    setSession({ ...fresh, expires_at: Date.now() + fresh.expires_in * 1000 });
+    return fresh;
+  }
+  return s;
+}
+
+// ── Store — Supabase ──────────────────────────────────────────────────────────
+async function loadStore() {
+  const rows = await supaFetch(
+    '/rest/v1/customers?select=*,visits(*)&order=created_at.desc'
+  );
+  if (!rows) return { customers: [] };
+  return {
+    customers: rows.map(row => ({
+      id:        row.id,
+      name:      row.name,
+      phone:     row.phone     || '',
+      notes:     row.notes     || '',
+      createdAt: row.created_at,
+      visits: (row.visits || []).map(v => ({
+        id:       v.id,
+        date:     v.date,
+        time:     v.time       || '',
+        services: v.services   || [],
+        price:    v.price      || 0,
+        comment:  v.comment    || '',
+        feedback: v.feedback   || '',
+        rating:   v.rating     || 0,
+        checkup:  v.checkup    || '',
+        photos:   v.photos     || 0,
+      })),
+    })),
+  };
+}
+
+async function upsertCustomer(c) {
+  return supaFetch('/rest/v1/customers', {
+    method: 'POST',
+    headers: { 'Prefer': 'resolution=merge-duplicates' },
+    body: JSON.stringify({
+      id:         c.id,
+      name:       c.name,
+      phone:      c.phone,
+      notes:      c.notes,
+      created_at: c.createdAt,
+      user_id:    getUserId(),
+    }),
+  });
+}
+
+// visit must include customer_id for the DB foreign key
+async function upsertVisit(v) {
+  return supaFetch('/rest/v1/visits', {
+    method: 'POST',
+    headers: { 'Prefer': 'resolution=merge-duplicates' },
+    body: JSON.stringify({
+      id:          v.id,
+      customer_id: v.customer_id,
+      date:        v.date,
+      time:        v.time,
+      services:    v.services,
+      price:       v.price,
+      comment:     v.comment,
+      feedback:    v.feedback,
+      rating:      v.rating,
+      checkup:     v.checkup,
+      photos:      v.photos,
+    }),
+  });
+}
+
+async function deleteCustomer(id) {
+  return supaFetch(`/rest/v1/customers?id=eq.${id}`, { method: 'DELETE' });
+}
+
+async function deleteVisit(id) {
+  return supaFetch(`/rest/v1/visits?id=eq.${id}`, { method: 'DELETE' });
+}
+
+// ── Store — localStorage (used only for demo / pre-migration) ─────────────────
 const STORE_KEY = 'asy_beaute_crm_v1';
-function loadStore() {
+function loadStoreLocal() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (raw) return JSON.parse(raw);
   } catch (e) {}
   return { customers: seedCustomers };
 }
-function saveStore(s) {
+function saveStoreLocal(s) {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(s)); } catch (e) {}
 }
 function resetStore() {
-  saveStore({ customers: seedCustomers });
+  saveStoreLocal({ customers: seedCustomers });
 }
 
-window.SERVICES = SERVICES;
-window.SVC_BY_ID = SVC_BY_ID;
-window.fmtMoney = fmtMoney;
-window.fmtDate = fmtDate;
-window.fmtDateShort = fmtDateShort;
-window.fmtTime = fmtTime;
-window.initials = initials;
-window.daysSince = daysSince;
-window.enrich = enrich;
-window.loadStore = loadStore;
-window.saveStore = saveStore;
-window.resetStore = resetStore;
+window.DEMO_MODE     = DEMO_MODE;
+window.SERVICES      = SERVICES;
+window.SVC_BY_ID     = SVC_BY_ID;
+window.LTV_HIGH      = LTV_HIGH;
+window.LTV_MID       = LTV_MID;
+window.fmtMoney      = fmtMoney;
+window.fmtDate       = fmtDate;
+window.fmtDateShort  = fmtDateShort;
+window.fmtTime       = fmtTime;
+window.initials      = initials;
+window.daysSince     = daysSince;
+window.enrich        = enrich;
+window.getSession    = getSession;
+window.setSession    = setSession;
+window.clearSession  = clearSession;
+window.getUserId     = getUserId;
+window.supaFetch     = supaFetch;
+window.sendMagicLink = sendMagicLink;
+window.handleAuthCallback = handleAuthCallback;
+window.ensureSession = ensureSession;
+window.loadStore     = loadStore;
+window.upsertCustomer  = upsertCustomer;
+window.upsertVisit     = upsertVisit;
+window.deleteCustomer  = deleteCustomer;
+window.deleteVisit     = deleteVisit;
+window.loadStoreLocal  = loadStoreLocal;
+window.saveStoreLocal  = saveStoreLocal;
+window.resetStore    = resetStore;
+window.seedCustomers = seedCustomers;

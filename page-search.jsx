@@ -132,8 +132,13 @@ function PageSearch({ store, go, openCustomer }) {
         <span className="muted" style={{ fontSize: 13 }}>
           <span className="strong num">{filtered.length}</span> of {customers.length} customers
         </span>
-        <button className="btn btn-ghost btn-sm">
-          <Icons.Download size={14} /> Export CSV
+        <button className="btn btn-ghost btn-sm" onClick={() => {
+          const data = loadStoreLocal();
+          const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+          const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+          a.download = 'asy_crm_export.json'; a.click();
+        }}>
+          <Icons.Download size={14} /> Export JSON
         </button>
       </div>
 
