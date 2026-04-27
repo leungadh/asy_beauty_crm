@@ -13,13 +13,6 @@ const LTV_MID  = 800;
 // True when Supabase hasn't been configured yet — loads seed data locally instead
 const DEMO_MODE = SUPABASE_URL.includes('YOUR_PROJECT');
 
-// Only these emails can request a sign-in link
-const ALLOWED_EMAILS = [
-  'REDACTED_EMAIL_1',
-  'REDACTED_EMAIL_2',
-  'REDACTED_EMAIL_3',
-  'REDACTED_EMAIL_4',
-];
 
 const SERVICES = [
   { id: 'areola',   name: 'Areola',    duration: 90, price: 680, icon: 'ServiceAreola',   desc: 'Permanent makeup' },
@@ -170,14 +163,11 @@ async function supaFetch(path, opts = {}) {
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 async function sendMagicLink(email) {
-  if (!ALLOWED_EMAILS.includes(email.toLowerCase())) {
-    throw new Error('This email address is not authorised to access this app.');
-  }
   const redirectTo = window.location.origin + '/';
   const res = await fetch(`${SUPABASE_URL}/auth/v1/otp`, {
     method: 'POST',
     headers: { 'apikey': SUPABASE_ANON, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, create_user: true, redirect_to: redirectTo }),
+    body: JSON.stringify({ email, create_user: false, redirect_to: redirectTo }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -322,7 +312,7 @@ function resetStore() {
 }
 
 window.DEMO_MODE       = DEMO_MODE;
-window.ALLOWED_EMAILS  = ALLOWED_EMAILS;
+
 window.SERVICES        = SERVICES;
 window.SVC_BY_ID     = SVC_BY_ID;
 window.LTV_HIGH      = LTV_HIGH;

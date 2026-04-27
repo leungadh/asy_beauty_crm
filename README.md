@@ -6,7 +6,7 @@ A lightweight, browser-based CRM built for ASY Beauté — a Singapore beauty sa
 
 ASY Beauté CRM helps the salon owner track every customer visit in one place: who came in, what services were performed, how much was charged, and how the customer felt about it. Over time it surfaces revenue trends, flags customers who haven't returned in over 90 days, and gives a complete history of every client at a glance.
 
-All data is stored locally in the browser — there is no server, no account, and nothing to install.
+Data is stored in Supabase (PostgreSQL). Sign-in is via magic link — no password required. Only pre-registered accounts can sign in.
 
 ## Features
 
@@ -19,16 +19,18 @@ All data is stored locally in the browser — there is no server, no account, an
 
 ## Getting started
 
-Open `CRM.html` directly in any modern browser. No installation required.
+**Live app:** https://asybeaute.netlify.app
 
-For accurate relative date calculations, serve the folder over HTTP rather than using `file://`:
+Sign in with a magic link — enter your email address and click the link that arrives in your inbox. Only pre-registered accounts can receive a sign-in link.
+
+**Running locally:**
 
 ```bash
 python3 -m http.server 8080
 # Open http://localhost:8080/CRM.html
 ```
 
-The app loads with eight seed customers and sample visits. Use the **Reset demo** button in the top bar to restore the original data at any time.
+The local app points at the same Supabase backend as the live site, so sign-in is still required. There is no build step — `.jsx` files are transpiled in-browser by Babel.
 
 ## Tech stack
 
@@ -36,23 +38,29 @@ The app loads with eight seed customers and sample visits. Use the **Reset demo*
 |---|---|
 | UI | React 18 (loaded from CDN) |
 | Transpilation | Babel Standalone (in-browser, no build step) |
-| Persistence | `localStorage` — no backend, no account |
+| Auth | Supabase magic link (email allowlist) |
+| Persistence | Supabase (PostgreSQL via PostgREST) |
+| Hosting | Netlify (static, no build) |
 | Fonts | Fraunces (headings), Plus Jakarta Sans (body), JetBrains Mono (numbers) |
 | Dependencies | None to install |
 
 ## Project structure
 
 ```
-CRM.html          Entry point — all CSS and script tags
-app.jsx           Root component, routing, theme application
-data.jsx          Services catalogue, seed data, store helpers (localStorage)
-components.jsx    Shared UI components (Avatar, StarRating, Sidebar, etc.)
-icons.jsx         SVG icon components
-page-dashboard.jsx   Dashboard with KPIs and analytics
-page-new-visit.jsx   Visit recording form
-page-search.jsx      Customer list with search and filters
-page-customer.jsx    Customer detail and visit timeline
-tweaks-panel.jsx  Floating design-tweaks panel (colour, density, radius)
+CRM.html              Entry point — all CSS and script tags
+app.jsx               Root component, routing, theme application, auth gate
+data.jsx              Services catalogue, Supabase config, auth helpers, store
+components.jsx        Shared UI components (Avatar, StarRating, Sidebar, etc.)
+icons.jsx             SVG icon components
+page-dashboard.jsx    Dashboard with KPIs and analytics
+page-new-visit.jsx    Visit recording form
+page-search.jsx       Customer list with search, filters, and JSON export
+page-customer.jsx     Customer detail and visit timeline
+tweaks-panel.jsx      Floating design-tweaks panel (colour, density, radius)
+migrate.html          Local-only tool — bulk-imports exported JSON into Supabase
+netlify.toml          Netlify hosting config (root rewrite, cache headers)
+manifest.webmanifest  PWA manifest
+sw.js                 Service worker (caching)
 ```
 
 Scripts are loaded in the order listed above. There is no bundler — each file exports its symbols onto `window` and the next file consumes them.
